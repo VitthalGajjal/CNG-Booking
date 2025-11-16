@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "35927392880",
+    "project_id": "cngslotbooking",
+    "storage_bucket": "cngslotbooking.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:35927392880:android:63fada26a8fb768ed82ab5",
+        "android_client_info": {
+          "package_name": "com.cngbooking"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAOaSLKQtQE1-c9lj68tVQ8iHFpG8z-kd4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
