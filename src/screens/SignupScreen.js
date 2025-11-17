@@ -201,6 +201,7 @@ const SignupScreen = ({ navigation }) => {
         email: email.trim(),
         vehicleNo: vehicleNo.trim().toUpperCase(),
         phone: phone.trim(),
+        role: 'user',
         createdAt: firestore.FieldValue.serverTimestamp(),
       });
 

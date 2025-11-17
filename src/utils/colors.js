@@ -10,4 +10,5 @@ export const colors = {
   border: '#E0E0E0', // Light grey for borders
   availableSlot: '#E8F5E9', // Very light green for available slots
   bookedSlot: '#FFEBEE', // Very light red for booked slots
+  success: '#28a745',
 };

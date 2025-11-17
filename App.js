@@ -77,10 +77,12 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View, StyleSheet, Text, Animated, Image } from 'react-native';
-import { auth } from './src/firebaseConfig';
+import { auth, firestore } from './src/firebaseConfig';
 import AuthStack from './src/navigation/AuthStack';
 import AppTabs from './src/navigation/AppTabs';
 import BookSlotScreen from './src/screens/BookSlotScreen';
+import AdminTabs from './src/navigation/AdminNavigator';
+import PendingApprovalScreen from './src/screens/admin/PendingApprovalScreen';
 import { colors } from './src/utils/colors';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
@@ -105,7 +107,7 @@ const SplashScreen = () => {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [fadeAnim, scaleAnim]);
 
   return (
     <View style={styles.splashContainer}>
@@ -140,17 +142,31 @@ const App = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
 
-  // Handle user state changes
-  function onAuthStateChanged(user) {
-    setUser(user);
+  const onAuthStateChanged = React.useCallback((nextUser) => {
+    setUser(nextUser);
     if (initializing) setInitializing(false);
-  }
+  }, [initializing]);
 
   useEffect(() => {
     const subscriber = auth.onAuthStateChanged(onAuthStateChanged);
-    return subscriber; // unsubscribe on unmount
-  }, []);
+    return subscriber;
+  }, [onAuthStateChanged]);
+
+
+  useEffect(() => {
+    let unsub = null;
+    if (user) {
+      const ref = firestore.collection('users').doc(user.uid);
+      unsub = ref.onSnapshot(doc => {
+        setProfile(doc.exists ? doc.data() : null);
+      });
+    } else {
+      setProfile(null);
+    }
+    return () => { if (unsub) unsub(); };
+  }, [user]);
 
   useEffect(() => {
     // Hide splash screen after 3 seconds
@@ -189,10 +205,14 @@ const App = () => {
         }}
       >
         {user ? (
-          <>
-            <Stack.Screen name="AppTabs" component={AppTabs} options={{ headerShown: false }} />
-            <Stack.Screen name="BookSlot" component={BookSlotScreen} options={{ title: 'Book Your Slot' }} />
-          </>
+          profile && profile.role === 'admin' ? (
+            <Stack.Screen name="AdminTabs" component={AdminTabs} options={{ headerShown: false }} />
+          ) : (
+            <>
+              <Stack.Screen name="AppTabs" component={AppTabs} options={{ headerShown: false }} />
+              <Stack.Screen name="BookSlot" component={BookSlotScreen} options={{ title: 'Book Your Slot' }} />
+            </>
+          )
         ) : (
           <Stack.Screen name="Auth" component={AuthStack} options={{ headerShown: false }} />
         )}

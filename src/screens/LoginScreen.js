@@ -65,6 +65,13 @@ const LoginScreen = ({ navigation }) => {
       >
         <Text style={styles.signupText}>Don't have an account? <Text style={styles.signupLink}>Sign Up</Text></Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={() => navigation.navigate('ManagerSignup')}
+        style={styles.signupPrompt}
+      >
+        <Text style={styles.signupText}>Are you a station manager? <Text style={styles.signupLink}>Create Manager Account</Text></Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };

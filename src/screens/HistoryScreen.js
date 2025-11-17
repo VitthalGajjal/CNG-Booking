@@ -278,10 +278,11 @@ const HistoryScreen = () => {
     const past = [];
 
     bookings.forEach(booking => {
-      // Only show non-cancelled bookings in current section
-      if (booking.status === 'Booked' && !isBookingPast(booking)) {
+      const pendingOrAccepted = booking.status === 'pending' || booking.status === 'accepted';
+      const pastStatus = booking.status === 'Cancelled' || booking.status === 'Completed' || booking.status === 'rejected';
+      if (pendingOrAccepted && !isBookingPast(booking)) {
         current.push(booking);
-      } else if (isBookingPast(booking) || booking.status === 'Cancelled' || booking.status === 'Completed') {
+      } else if (isBookingPast(booking) || pastStatus) {
         past.push(booking);
       }
     });

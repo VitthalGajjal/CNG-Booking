@@ -98,10 +98,28 @@ const BookingCard = ({ booking }) => {
         {
           text: "Yes",
           onPress: async () => {
-            await firestore()
-              .collection("bookings")
-              .doc(booking.bookingId)
-              .update({ status: "Cancelled" });
+            try {
+              const ref = firestore()
+                .collection('stations')
+                .doc(booking.stationId)
+                .collection('slots')
+                .doc(booking.date);
+              const snap = await ref.get();
+              if (snap.exists) {
+                const data = snap.data();
+                const updated = (data.timeSlots || []).map(s => {
+                  if (s && s.time === booking.slot && s.booked && s.bookedBy === booking.userId) {
+                    return { ...s, booked: false, bookedBy: null };
+                  }
+                  return s;
+                });
+                await ref.update({ timeSlots: updated });
+              }
+              await firestore()
+                .collection('bookings')
+                .doc(booking.bookingId)
+                .update({ status: 'Cancelled' });
+            } catch (e) {}
           }
         }
       ]
@@ -110,10 +128,14 @@ const BookingCard = ({ booking }) => {
 
   const getStatusStyle = (status) => {
     switch (status) {
-      case 'Booked':
+      case 'pending':
         return { color: colors.primary };
+      case 'accepted':
+        return { color: '#28a745' };
       case 'Completed':
         return { color: '#28a745' };
+      case 'rejected':
+        return { color: colors.error };
       case 'Cancelled':
         return { color: colors.error };
       default:
@@ -138,7 +160,7 @@ const BookingCard = ({ booking }) => {
       </View>
 
       {/* 🚀 Show Cancel Button Only For Current Booking */}
-      {booking.status === 'Booked' && (
+      {(booking.status === 'pending' || booking.status === 'accepted') && (
         <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel}>
           <Text style={styles.cancelBtnText}>Cancel Booking</Text>
         </TouchableOpacity>
