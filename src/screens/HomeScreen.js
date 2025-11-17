@@ -6,7 +6,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import StationCard from '../components/StationCard';
 import firestore from '@react-native-firebase/firestore';
 import { colors } from '../utils/colors';
-import { dummyStations } from '../data/dummyStations'; // Ensure this path is correct
+// import { dummyStations } from '../data/dummyStations'; // Ensure this path is correct
 
 const HomeScreen = ({ navigation }) => {
   const [stations, setStations] = useState([]);
@@ -27,11 +27,11 @@ const HomeScreen = ({ navigation }) => {
         console.log('Firestore stations collection is empty. Seeding with dummy data...');
         
         const batch = firestore().batch();
-        dummyStations.forEach(station => {
-          // Ensure dummy station IDs are used or generate new ones if needed
-          const stationRef = firestore().collection('stations').doc(station.id || firestore().collection('stations').doc().id);
-          batch.set(stationRef, station);
-        });
+        // dummyStations.forEach(station => {
+        //   // Ensure dummy station IDs are used or generate new ones if needed
+        //   const stationRef = firestore().collection('stations').doc(station.id || firestore().collection('stations').doc().id);
+        //   batch.set(stationRef, station);
+        // });
         
         await batch.commit();
         
@@ -57,8 +57,8 @@ const HomeScreen = ({ navigation }) => {
             {
               text: "Use Dummy Data (Offline Mode)",
               onPress: () => {
-                setStations(dummyStations);
-                setFilteredStations(dummyStations);
+                // setStations(dummyStations);
+                // setFilteredStations(dummyStations);
                 setLoading(false);
                 setRefreshing(false);
               }
@@ -77,8 +77,8 @@ const HomeScreen = ({ navigation }) => {
         // Generic error for network issues or other unexpected errors
         Alert.alert("Error", "Could not load stations. Please check your internet connection and try again later.");
         // Fallback to dummy data if network issue prevents initial load
-        setStations(dummyStations);
-        setFilteredStations(dummyStations);
+        // setStations(dummyStations);
+        // setFilteredStations(dummyStations);
       }
     } finally {
       setLoading(false);
