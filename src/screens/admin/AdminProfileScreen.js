@@ -1,6 +1,8 @@
+
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView, TextInput, TouchableOpacity, Platform, PermissionsAndroid, Linking } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Geolocation from '@react-native-community/geolocation';
 import { colors } from '../../utils/colors';
 import authModule from '@react-native-firebase/auth';
 import firestoreModule from '@react-native-firebase/firestore';
@@ -15,10 +17,13 @@ const AdminProfileScreen = () => {
     location: '', 
     operatingHours: '08:00-20:00', 
     status: 'Open', 
-    contact: '' 
+    contact: '',
+    latitude: null,
+    longitude: null
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
 
   useEffect(() => {
     const uid = authModule().currentUser?.uid;
@@ -48,13 +53,212 @@ const AdminProfileScreen = () => {
           location: data.location || '',
           operatingHours: data.operatingHours || '08:00-20:00',
           status: data.status || 'Open',
-          contact: data.contact || ''
+          contact: data.contact || '',
+          latitude: data.latitude || null,
+          longitude: data.longitude || null
         });
       }
       setLoading(false);
     });
     return () => unsub && unsub();
   }, [profile?.assignedStationId]);
+
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        // Request both FINE and COARSE location for better compatibility
+        const fineGranted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Location Permission',
+            message: 'This app needs access to your location to set station coordinates.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        
+        if (fineGranted === PermissionsAndroid.RESULTS.GRANTED) {
+          return true;
+        }
+        
+        // Fallback to coarse location
+        const coarseGranted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION
+        );
+        
+        return coarseGranted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn('Permission request error:', err);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const showLocationSettingsAlert = () => {
+    Alert.alert(
+      '🔴 GPS is Disabled',
+      'Location services are turned OFF on your device.\n\nPlease enable GPS to capture station location:\n\n' +
+      '1️⃣ Open Settings\n' +
+      '2️⃣ Tap "Location" or "Location Services"\n' +
+      '3️⃣ Turn ON Location\n' +
+      '4️⃣ Set Location Mode to "High Accuracy"\n' +
+      '5️⃣ Come back and try again',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Open Settings', 
+          onPress: () => {
+            if (Platform.OS === 'android') {
+              Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS');
+            } else {
+              Linking.openSettings();
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const getCurrentLocation = async () => {
+    // Step 1: Check permissions
+    const hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
+      Alert.alert(
+        'Permission Denied', 
+        'Location permission is required to capture station location.\n\nPlease grant permission in Settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() }
+        ]
+      );
+      return;
+    }
+
+    setFetchingLocation(true);
+
+    // Step 2: Try with multiple strategies
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    const tryGetLocation = (useHighAccuracy = true) => {
+      attempts++;
+      console.log(`📍 Location attempt ${attempts}/${maxAttempts} (High Accuracy: ${useHighAccuracy})`);
+
+      Geolocation.getCurrentPosition(
+        (position) => {
+          // SUCCESS
+          const { latitude, longitude, accuracy } = position.coords;
+          console.log('✅ Location captured:', latitude, longitude, 'Accuracy:', accuracy);
+          setStation(s => ({ ...s, latitude, longitude }));
+          setFetchingLocation(false);
+          Alert.alert(
+            '✅ Success!', 
+            `Location captured successfully!\n\nLatitude: ${latitude.toFixed(6)}\nLongitude: ${longitude.toFixed(6)}\nAccuracy: ${accuracy ? accuracy.toFixed(0) + 'm' : 'N/A'}`
+          );
+        },
+        (error) => {
+          // ERROR HANDLING
+          console.error(`❌ Location error (attempt ${attempts}):`, error);
+          
+          if (error.code === 2) {
+            // GPS/Location services disabled
+            setFetchingLocation(false);
+            showLocationSettingsAlert();
+          } else if (error.code === 3) {
+            // TIMEOUT
+            if (attempts === 1 && useHighAccuracy) {
+              // Try with lower accuracy on second attempt
+              console.log('⏱️ Timeout with high accuracy, trying with lower accuracy...');
+              setTimeout(() => tryGetLocation(false), 500);
+            } else if (attempts < maxAttempts) {
+              // Try again with same settings
+              console.log('⏱️ Timeout, retrying...');
+              setTimeout(() => tryGetLocation(useHighAccuracy), 1000);
+            } else {
+              // All attempts failed
+              setFetchingLocation(false);
+              Alert.alert(
+                '❌ Location Timeout',
+                'Unable to get GPS location. This can happen if:\n\n' +
+                '• You\'re indoors (try going outside)\n' +
+                '• GPS signal is weak\n' +
+                '• Location services just turned on (wait 30 sec)\n\n' +
+                'Would you like to enter coordinates manually?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Enter Manually', onPress: manualLocationEntry },
+                  { text: 'Try Again', onPress: getCurrentLocation }
+                ]
+              );
+            }
+          } else if (error.code === 1) {
+            // PERMISSION DENIED
+            setFetchingLocation(false);
+            Alert.alert(
+              'Permission Denied',
+              'Location permission was denied. Please enable it in Settings.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+          } else {
+            // OTHER ERRORS
+            setFetchingLocation(false);
+            Alert.alert(
+              '❌ Location Failed',
+              `Unable to get location.\n\nError: ${error.message || 'Unknown error'}`,
+              [
+                { text: 'Enter Manually', onPress: manualLocationEntry },
+                { text: 'Try Again', onPress: getCurrentLocation }
+              ]
+            );
+          }
+        },
+        { 
+          enableHighAccuracy: useHighAccuracy,
+          timeout: useHighAccuracy ? 30000 : 15000, // 30s for high accuracy, 15s for low
+          maximumAge: 10000, // Accept cached location up to 10 seconds old
+          distanceFilter: 0,
+        }
+      );
+    };
+
+    // Start first attempt with high accuracy
+    tryGetLocation(true);
+  };
+
+  // Alternative: Manual Location Entry
+  const manualLocationEntry = () => {
+    Alert.prompt(
+      'Enter Location Manually',
+      'Enter coordinates in format: latitude,longitude\nExample: 19.8762,75.3433',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Save',
+          onPress: (text) => {
+            const coords = text?.split(',').map(c => parseFloat(c.trim()));
+            if (coords && coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+              if (coords[0] >= -90 && coords[0] <= 90 && coords[1] >= -180 && coords[1] <= 180) {
+                setStation(s => ({ ...s, latitude: coords[0], longitude: coords[1] }));
+                Alert.alert('Success', 'Location set manually');
+              } else {
+                Alert.alert('Invalid', 'Coordinates out of range');
+              }
+            } else {
+              Alert.alert('Invalid Format', 'Use format: latitude,longitude');
+            }
+          }
+        }
+      ],
+      'plain-text',
+      '',
+      'decimal-pad'
+    );
+  };
 
   const saveProfile = async () => {
     if (!profile) return;
@@ -82,6 +286,10 @@ const AdminProfileScreen = () => {
       Alert.alert('Error', 'Station name is required');
       return;
     }
+    if (!station.latitude || !station.longitude) {
+      Alert.alert('Error', 'Please capture station location first');
+      return;
+    }
     setSaving(true);
     try {
       const stationData = {
@@ -91,6 +299,8 @@ const AdminProfileScreen = () => {
         operatingHours: station.operatingHours.trim() || '08:00-20:00',
         status: station.status || 'Open',
         contact: station.contact.trim(),
+        latitude: station.latitude,
+        longitude: station.longitude,
         updatedAt: firestoreModule.FieldValue.serverTimestamp(),
       };
       await firestoreModule().collection('stations').doc(profile.assignedStationId).set(stationData, { merge: true });
@@ -110,6 +320,10 @@ const AdminProfileScreen = () => {
       Alert.alert('Error', 'Station name is required');
       return;
     }
+    if (!station.latitude || !station.longitude) {
+      Alert.alert('Error', 'Please capture station location first');
+      return;
+    }
     setSaving(true);
     try {
       const stationData = {
@@ -119,6 +333,8 @@ const AdminProfileScreen = () => {
         operatingHours: station.operatingHours.trim() || '08:00-20:00',
         status: station.status || 'Open',
         contact: station.contact.trim(),
+        latitude: station.latitude,
+        longitude: station.longitude,
         createdAt: firestoreModule.FieldValue.serverTimestamp(),
         managerId: uid,
       };
@@ -275,6 +491,58 @@ const AdminProfileScreen = () => {
           keyboardType="phone-pad"
         />
 
+        {/* Location Instructions */}
+        <View style={styles.warningBox}>
+          <Icon name="alert-circle" size={20} color="#FF9800" />
+          <Text style={styles.warningText}>
+            Important: Enable GPS and go outdoors for best results. First-time GPS lock may take 30-60 seconds.
+          </Text>
+        </View>
+
+        {/* Location Capture Button */}
+        <TouchableOpacity 
+          style={[styles.locationButton, fetchingLocation && styles.buttonDisabled]} 
+          onPress={getCurrentLocation}
+          disabled={fetchingLocation}
+        >
+          {fetchingLocation ? (
+            <>
+              <ActivityIndicator color={colors.buttonText} size="small" />
+              <Text style={[styles.buttonText, { marginLeft: 8 }]}>Getting GPS Location...</Text>
+            </>
+          ) : (
+            <>
+              <Icon name="crosshairs-gps" size={20} color={colors.buttonText} />
+              <Text style={styles.buttonText}>
+                {station.latitude && station.longitude ? 'Update GPS Location' : 'Capture GPS Location *'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        {/* Manual Entry Option */}
+        <TouchableOpacity 
+          style={styles.manualButton} 
+          onPress={manualLocationEntry}
+          disabled={fetchingLocation}
+        >
+          <Icon name="pencil" size={18} color={colors.primary} />
+          <Text style={styles.manualButtonText}>Enter Location Manually</Text>
+        </TouchableOpacity>
+
+        {/* Show captured location */}
+        {station.latitude && station.longitude && (
+          <View style={styles.locationDisplay}>
+            <Icon name="check-circle" size={18} color={colors.success} />
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationLabel}>Coordinates Saved:</Text>
+              <Text style={styles.locationText}>
+                {station.latitude.toFixed(6)}, {station.longitude.toFixed(6)}
+              </Text>
+            </View>
+          </View>
+        )}
+
         <TouchableOpacity 
           style={[styles.button, saving && styles.buttonDisabled]} 
           onPress={profile.assignedStationId ? saveStation : createAndLinkStation}
@@ -364,6 +632,23 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: 'top',
   },
+  warningBox: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF3CD',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  warningText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 13,
+    color: '#856404',
+    lineHeight: 20,
+    fontWeight: '500',
+  },
   button: { 
     flexDirection: 'row',
     alignItems: 'center',
@@ -373,6 +658,32 @@ const styles = StyleSheet.create({
     borderRadius: 10, 
     marginTop: 8,
   },
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2196F3',
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  manualButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    marginBottom: 12,
+  },
+  manualButtonText: {
+    color: colors.primary,
+    fontSize: 14,
+    marginLeft: 6,
+    fontWeight: '600',
+  },
   buttonDisabled: {
     opacity: 0.6,
   },
@@ -381,6 +692,31 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
+  },
+  locationDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D4EDDA',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  locationInfo: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  locationLabel: {
+    fontSize: 11,
+    color: '#155724',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  locationText: {
+    fontSize: 13,
+    color: '#155724',
+    fontWeight: 'bold',
   },
   logoutButton: {
     flexDirection: 'row',
